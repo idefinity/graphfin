@@ -1571,6 +1571,36 @@ lgraph::series::MeasureValue ParseSeriesMeasureValue(const cypher::FieldData &v,
                                   "' must match its declared type");
 }
 
+/** Parses one {ts, measure...} map into a store Point. Shared by series.append
+ *  and series.append_batch so a point means exactly the same thing in both. */
+void ParseSeriesPointMap(const cypher::FieldData &point_arg, const std::string &field,
+                         const std::vector<lgraph::series::MeasureRef> &measures,
+                         const std::string &proc, lgraph::series::Point *out) {
+    const auto &point = *point_arg.map;
+    auto ts_it = point.find("ts");
+    if (ts_it == point.end()) {
+        throw lgraph::CypherException(proc + ": point map needs a 'ts' entry");
+    }
+    out->ts = ParseSeriesTimestamp(ts_it->second, proc);
+    out->values.clear();
+    out->values.reserve(measures.size());
+    for (const auto &m : measures) {
+        auto it = point.find(m.name);
+        out->values.emplace_back(it == point.end()
+                                     ? lgraph::series::MeasureValue::Null()
+                                     : ParseSeriesMeasureValue(it->second, m.type, m.name, proc));
+    }
+    for (const auto &kv : point) {
+        if (kv.first != "ts" &&
+            std::none_of(measures.begin(), measures.end(), [&](const auto &m) {
+                return m.name == kv.first;
+            })) {
+            THROW_CODE(InputError, (proc + ": unknown measure [{}] for field [{}]").c_str(),
+                       kv.first, field);
+        }
+    }
+}
+
 void CreateSeriesFieldImpl(RTContext *ctx, const cypher::VEC_EXPR &args, bool is_vertex,
                            const std::string &proc, const cypher::VEC_STR &yield_items,
                            std::vector<cypher::Record> *records) {
@@ -1718,33 +1748,11 @@ void BuiltinProcedure::SeriesAppend(RTContext *ctx, const Record *record, const 
     if (!resolved) {
         THROW_CODE(InputError, "Element has no time series field [{}]", field);
     }
-    const auto &point = *args[2].constant.map;
-    auto ts_it = point.find("ts");
-    if (ts_it == point.end()) {
-        throw lgraph::CypherException("series.append: point map needs a 'ts' entry");
-    }
-    const int64_t ts = ParseSeriesTimestamp(ts_it->second, "series.append");
-    std::vector<lgraph::series::MeasureValue> values;
-    values.reserve(measures.size());
-    for (const auto &m : measures) {
-        auto it = point.find(m.name);
-        values.emplace_back(it == point.end()
-                                ? lgraph::series::MeasureValue::Null()
-                                : ParseSeriesMeasureValue(it->second, m.type, m.name,
-                                                          "series.append"));
-    }
-    for (const auto &kv : point) {
-        if (kv.first != "ts" &&
-            std::none_of(measures.begin(), measures.end(), [&](const auto &m) {
-                return m.name == kv.first;
-            })) {
-            THROW_CODE(InputError, "series.append: unknown measure [{}] for field [{}]",
-                       kv.first, field);
-        }
-    }
+    lgraph::series::Point point;
+    ParseSeriesPointMap(args[2].constant, field, measures, "series.append", &point);
     const bool ok = elem.is_edge
-                        ? txn->SetEdgeSeriesPoint(elem.euid, field, ts, values)
-                        : txn->SetVertexSeriesPoint(elem.vid, field, ts, values);
+                        ? txn->SetEdgeSeriesPoint(elem.euid, field, point.ts, point.values)
+                        : txn->SetVertexSeriesPoint(elem.vid, field, point.ts, point.values);
     if (!ok) {
         THROW_CODE(InputError, "series.append: point does not fit the bucket byte cap");
     }
@@ -1752,6 +1760,59 @@ void BuiltinProcedure::SeriesAppend(RTContext *ctx, const Record *record, const 
     r.AddConstant(lgraph::FieldData(static_cast<int64_t>(1)));
     records->emplace_back(r.Snapshot());
     FillProcedureYieldItem("series.append", yield_items, records);
+}
+
+void BuiltinProcedure::SeriesAppendBatch(RTContext *ctx, const Record *record,
+                                         const VEC_EXPR &args, const VEC_STR &yield_items,
+                                         std::vector<Record> *records) {
+    CYPHER_ARG_CHECK(args.size() == 3,
+                     "e.g. series.append_batch(node, 'prices', "
+                     "[{ts: datetime('2024-01-02'), close: 11.0, volume: 200}, ...])");
+    CYPHER_ARG_CHECK(args[1].IsString(), "field must be a string");
+    CYPHER_ARG_CHECK(args[2].IsArray(), "points must be a list of point maps");
+    CheckProcedureYieldItem("series.append_batch", yield_items);
+    CYPHER_DB_PROCEDURE_GRAPH_CHECK();
+    SeriesProcElement elem;
+    ExtractSeriesProcElement(args[0], "series.append_batch", &elem);
+    const std::string field = args[1].constant.scalar.AsString();
+    auto txn = ctx->txn_->GetTxn();
+    uint16_t field_id = 0;
+    std::vector<lgraph::series::MeasureColumn> columns;
+    lgraph::series::BucketPolicy policy;
+    std::vector<lgraph::series::MeasureRef> measures;
+    const bool resolved = elem.is_edge
+                              ? txn->ResolveEdgeSeriesSchema(elem.euid, field, &field_id,
+                                                             &columns, &policy, &measures)
+                              : txn->ResolveVertexSeriesSchema(elem.vid, field, &field_id,
+                                                               &columns, &policy, &measures);
+    if (!resolved) {
+        THROW_CODE(InputError, "Element has no time series field [{}]", field);
+    }
+    const auto &items = *args[2].constant.array;
+    // Bounds the parse memory and the per-call latency; larger ingestions
+    // chunk their input into several calls.
+    CYPHER_ARG_CHECK(items.size() <= 100000,
+                     "series.append_batch accepts at most 100000 points per call");
+    std::vector<lgraph::series::Point> points;
+    points.reserve(items.size());
+    for (const auto &item : items) {
+        CYPHER_ARG_CHECK(item.type == cypher::FieldData::MAP,
+                         "each point must be a map of ts plus measure values");
+        points.emplace_back();
+        ParseSeriesPointMap(item, field, measures, "series.append_batch", &points.back());
+    }
+    lgraph::series::BatchStats stats;
+    const bool ok =
+        elem.is_edge ? txn->SetEdgeSeriesPoints(elem.euid, field, std::move(points), &stats)
+                     : txn->SetVertexSeriesPoints(elem.vid, field, std::move(points), &stats);
+    if (!ok) {
+        THROW_CODE(InputError, "series.append_batch: a point does not fit the bucket byte cap");
+    }
+    Record r;
+    r.AddConstant(lgraph::FieldData(static_cast<int64_t>(stats.written)));
+    r.AddConstant(lgraph::FieldData(static_cast<int64_t>(stats.replaced)));
+    records->emplace_back(r.Snapshot());
+    FillProcedureYieldItem("series.append_batch", yield_items, records);
 }
 
 void BuiltinProcedure::SeriesSet(RTContext *ctx, const Record *record, const VEC_EXPR &args,

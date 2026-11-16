@@ -29,6 +29,15 @@ Intra-graph sharding, cross-shard query execution and distributed graph transact
 are separate designs, not consequences of whole-graph placement. Financial models
 and vendor-specific ingestion are application projects, not engine milestones.
 
+## Series track progress
+
+| Status | Item |
+| --- | --- |
+| done (unpushed) | Item 3 first slice: `series.append_batch` — per-bucket merge (`SeriesStore::UpsertBatch` + transaction batch setters), last-wins within-batch duplicates, `written`/`replaced` stats, 100k points/call cap. No on-disk format change; point-cap split layout byte-identical to sequential ascending appends |
+| TODO | Item 3 remainder: resumable ingestion, bounded reads/as-of access, streaming aggregates |
+| TODO | Open-bucket catalog (in-memory directory of the writable bucket per series) so per-symbol micro-batches stay cheap across calls |
+| TODO | Segmented bucket format (TSB2) design, gated behind item 2's identity/compatibility review |
+
 ## Reorganization track (REVIEW.md follow-ups)
 
 | Status | Item |
