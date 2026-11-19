@@ -15,6 +15,8 @@
 #include "cypher/cypher_exception.h"
 #include "cypher/procedure/procedure.h"
 
+#include <cstdlib>  // std::system
+
 namespace cypher {
 
 #define CYPHER_ARG_CHECK(pred, msg)           \

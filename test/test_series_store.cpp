@@ -20,6 +20,14 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <Windows.h>
+#define GetCurrentPid GetCurrentProcessId
+#else
+#include <unistd.h>
+#define GetCurrentPid getpid
+#endif
+
 #include "gtest/gtest.h"
 #include "./ut_utils.h"
 #include "fma-common/file_system.h"
@@ -109,7 +117,9 @@ std::vector<int64_t> RangeTimes(const std::vector<Point>& points) {
 class TestSeriesStore : public TuGraphTest {
  protected:
     void SetUp() override {
-        dir_ = "./test_series_store_db";
+        // Unique per process so concurrent unit_test processes sharing a cwd
+        // cannot race on the same LMDB directory.
+        dir_ = "./test_series_store_db_" + std::to_string(GetCurrentPid());
         fma_common::file_system::RemoveDir(dir_);
         fma_common::file_system::MkDir(dir_);
     }

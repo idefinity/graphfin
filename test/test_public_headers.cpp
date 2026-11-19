@@ -18,6 +18,7 @@
 // a missing transitive include is a build failure here rather than in a
 // downstream project.
 #include "lgraph/lgraph_spatial.h"
+#include "lgraph/olap_on_db.h"
 #include "tools/lgraph_log.h"
 
 #include "./ut_utils.h"
