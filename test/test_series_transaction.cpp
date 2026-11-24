@@ -770,9 +770,17 @@ TEST_F(TestSeriesTransaction, ByteCapFailureAfterBucketWriteAbortsWholeBatch) {
                                                  CappedIntSeriesField("p", 2, cap)},
                           true, VertexOptions("id")));
 
+    // Create the vertex in its own committed transaction. The batch txn below
+    // is aborted, so a vertex created inside it would be rolled back as well.
+    VertexId v = 0;
+    {
+        auto setup = db.CreateWriteTxn();
+        v = setup.AddVertex(std::string("Capped"), std::vector<std::string>{"id"},
+                            std::vector<std::string>{"1"});
+        setup.Commit();
+    }
+
     auto txn = db.CreateWriteTxn();
-    VertexId v = txn.AddVertex(std::string("Capped"), std::vector<std::string>{"id"},
-                               std::vector<std::string>{"1"});
     std::vector<series::Point> batch;
     for (int i = 0; i < 3; ++i) {
         series::Point p;
