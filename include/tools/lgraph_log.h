@@ -18,11 +18,16 @@
 #include <string>
 #include <iostream>
 #include <boost/date_time/posix_time/posix_time.hpp>
-// Boost.Log is pulled in header-by-header rather than through boost/log/common.hpp
-// and boost/log/sinks.hpp: the umbrella headers drag in every sink, every
-// attribute factory and every expression formatter, which costs ~170 MB of AST
-// in every translation unit that only needs the handful of facilities used
-// below.
+// Downstream projects historically relied on these umbrella headers being
+// transitively available from lgraph_log.h. They cost roughly 170 MB of extra
+// AST per translation unit (every sink, attribute factory and expression
+// formatter), but restoring them keeps the installed-header surface source
+// compatible; the narrower headers below still cover this file's direct uses.
+#include <boost/log/common.hpp>
+#include <boost/log/expressions.hpp>
+#include <boost/log/attributes.hpp>
+#include <boost/log/sinks.hpp>
+#include <boost/phoenix/bind/bind_function.hpp>
 #include <boost/log/core.hpp>
 #include <boost/log/attributes/clock.hpp>
 #include <boost/log/attributes/constant.hpp>
