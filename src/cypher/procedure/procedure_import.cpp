@@ -9,13 +9,13 @@
  * are very heavy to parse, and procedure.cpp no longer fits the compiler's
  * memory budget on a small host. The function definitions are unchanged. */
 
+#include <cstdlib>  // std::system
+
 #include "db/galaxy.h"
 #include "fma-common/encrypt.h"
 #include "import/import_online.h"
 #include "cypher/cypher_exception.h"
 #include "cypher/procedure/procedure.h"
-
-#include <cstdlib>  // std::system
 
 namespace cypher {
 
