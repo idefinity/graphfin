@@ -392,10 +392,19 @@ TEST_F(TestOlapOnDB, OlapOnDB) {
         for (int i = 0; i < parent.Size(); i++) {
             parent[i] = i;
         }
+        // The legacy name has no snapshot precondition of its own: with the
+        // snapshot still open it goes straight into the transaction layer,
+        // which rejects a nested transaction. That is a different error from
+        // the typed API's explicit "while the snapshot transaction is open"
+        // check. Nested transactions are forbidden by the storage layer, so
+        // the stringified values are asserted after the snapshot is closed.
+        UT_EXPECT_THROW_MSG(filter_graph.WriteToGraphDB(parent, "legacy_value"),
+                            "Nested transaction is forbidden");
+        ASSERT_TRUE(txn.IsValid());
         txn.Commit();
 
-        // Legacy WriteToGraphDB keeps its original stringifying behavior and
-        // writes into a STRING field; it adds no snapshot precondition of its own.
+        // With the snapshot closed, the legacy call writes stringified values
+        // into the STRING field, as it did before the typed API was added.
         filter_graph.WriteToGraphDB(parent, "legacy_value");
         txn = db.CreateReadTxn();
         auto vit = txn.GetVertexIterator();
