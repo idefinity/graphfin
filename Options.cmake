@@ -115,23 +115,39 @@ if (WITH_TESTS)
 endif (WITH_TESTS)
 
 option(LGRAPH_STATIC_RUNTIME "Link libstdc++/libgcc statically when the toolchain supports it." ON)
-set(LGRAPH_OPENBLAS_ROOT "/opt/OpenBLAS" CACHE PATH "OpenBLAS installation prefix (include/ and lib/).")
+option(LGRAPH_STATIC_RUNTIME_STRICT "Error instead of falling back to dynamic C++ runtime linkage." OFF)
+set(LGRAPH_OPENBLAS_ROOT "/opt/OpenBLAS" CACHE PATH
+        "Hint: OpenBLAS installation prefix; also searched under lib/ and lib64/.")
 
-# CI images install OpenBLAS under /opt; the low-memory host keeps a copy under
-# deps/install instead. Resolve the library once so every target links the same
-# file and a missing OpenBLAS fails at configure time with a usable message.
-if (EXISTS "${LGRAPH_OPENBLAS_ROOT}/lib/libopenblas.a")
-    set(LGRAPH_OPENBLAS_LIBRARY "${LGRAPH_OPENBLAS_ROOT}/lib/libopenblas.a")
-elseif (EXISTS "${LGRAPH_OPENBLAS_ROOT}/lib/libopenblas.so")
-    set(LGRAPH_OPENBLAS_LIBRARY "${LGRAPH_OPENBLAS_ROOT}/lib/libopenblas.so")
-elseif (EXISTS "${CMAKE_CURRENT_LIST_DIR}/deps/install/OpenBLAS/lib/libopenblas.a")
-    message(STATUS "OpenBLAS not found at ${LGRAPH_OPENBLAS_ROOT}; using deps/install/OpenBLAS.")
-    set(LGRAPH_OPENBLAS_ROOT "${CMAKE_CURRENT_LIST_DIR}/deps/install/OpenBLAS")
-    set(LGRAPH_OPENBLAS_LIBRARY "${LGRAPH_OPENBLAS_ROOT}/lib/libopenblas.a")
-else ()
+# Hints only: CI images install OpenBLAS under /opt, the low-memory host keeps
+# a copy under deps/install, and developer machines may use a system package or
+# Homebrew. LGRAPH_OPENBLAS_LIBRARY can be supplied directly on the command
+# line; otherwise find_library caches the same library for every target.
+if (NOT LGRAPH_OPENBLAS_LIBRARY)
+    find_library(LGRAPH_OPENBLAS_LIBRARY
+            NAMES openblas
+            HINTS ${LGRAPH_OPENBLAS_ROOT}
+                  "${CMAKE_CURRENT_LIST_DIR}/deps/install/OpenBLAS"
+            PATH_SUFFIXES lib lib64
+                          lib/x86_64-linux-gnu lib/aarch64-linux-gnu
+                          lib64/x86_64-linux-gnu lib64/aarch64-linux-gnu
+                          opt/homebrew/lib homebrew/lib usr/local/lib
+            DOC "OpenBLAS library used by the OLAP/plugin targets.")
+endif ()
+if (LGRAPH_OPENBLAS_LIBRARY)
+    message(STATUS "OpenBLAS library: ${LGRAPH_OPENBLAS_LIBRARY}")
+elseif (BUILD_PROCEDURE)
+    # BUILD_PROCEDURE is the option that enables the OLAP/plugin targets.
     message(FATAL_ERROR
-        "OpenBLAS not found at ${LGRAPH_OPENBLAS_ROOT}. "
-        "Set -DLGRAPH_OPENBLAS_ROOT=<prefix> or install it under deps/install/OpenBLAS.")
+            "OpenBLAS not found. Set -DLGRAPH_OPENBLAS_ROOT=<prefix> or "
+            "-DLGRAPH_OPENBLAS_LIBRARY=<path>, or install it under "
+            "deps/install/OpenBLAS. Use -DBUILD_PROCEDURE=OFF for a build "
+            "without the OLAP/plugin targets.")
+else ()
+    message(WARNING
+            "OpenBLAS not found; BUILD_PROCEDURE=OFF skips the OLAP/plugin "
+            "targets, but the core lgraph target still links OpenBLAS and "
+            "will need a library in order to link.")
 endif ()
 
 # disable krb5
@@ -221,8 +237,14 @@ include(CheckCXXSourceCompiles)
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if (LGRAPH_STATIC_RUNTIME)
         # Accepting the flag is not enough: the static archives must also be
-        # installed. Try a real link so hosts without libstdc++.a fall back to
-        # dynamic linking instead of failing at the final link.
+        # installed. Keep the real link probe, but redo it when the strictness
+        # option changes so its cache cannot hide a different policy.
+        if (NOT "${LGRAPH_STATIC_RUNTIME_LINKS_STRICT}" STREQUAL
+                "${LGRAPH_STATIC_RUNTIME_STRICT}")
+            unset(LGRAPH_STATIC_RUNTIME_LINKS CACHE)
+            set(LGRAPH_STATIC_RUNTIME_LINKS_STRICT "${LGRAPH_STATIC_RUNTIME_STRICT}"
+                    CACHE INTERNAL "Strictness used for the static runtime link probe.")
+        endif ()
         set(CMAKE_REQUIRED_FLAGS "-static-libstdc++ -static-libgcc")
         check_cxx_source_compiles(
             "#include <string>\nint main() { std::string s = \"x\"; return s.empty() ? 0 : 1; }"
@@ -230,10 +252,18 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         unset(CMAKE_REQUIRED_FLAGS)
         if (LGRAPH_STATIC_RUNTIME_LINKS)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -static-libstdc++ -static-libgcc")
+            message("C++ runtime linkage: STATIC (libstdc++/libgcc)")
+        elseif (LGRAPH_STATIC_RUNTIME_STRICT)
+            message(FATAL_ERROR
+                    "LGRAPH_STATIC_RUNTIME_STRICT=ON but the toolchain cannot link "
+                    "libstdc++.a/libgcc_eh.a. Install the static C++ runtime or set "
+                    "-DLGRAPH_STATIC_RUNTIME=OFF/-DLGRAPH_STATIC_RUNTIME_STRICT=OFF.")
         else ()
-            message(WARNING "LGRAPH_STATIC_RUNTIME=ON but the toolchain cannot link the "
-                            "static C++ runtime; linking dynamically.")
+            message("C++ runtime linkage: DYNAMIC (static link probe failed; "
+                    "set -DLGRAPH_STATIC_RUNTIME_STRICT=ON to make this an error)")
         endif ()
+    else ()
+        message("C++ runtime linkage: DYNAMIC (LGRAPH_STATIC_RUNTIME=OFF)")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     CHECK_CXX_COMPILER_FLAG("-stdlib=libc++" COMPILER_SUPPORTS_STATIC_CLANG)
