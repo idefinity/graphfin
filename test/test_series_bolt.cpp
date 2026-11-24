@@ -31,6 +31,14 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#include <Windows.h>
+#define GetCurrentPid GetCurrentProcessId
+#else
+#include <unistd.h>
+#define GetCurrentPid getpid
+#endif
+
 #include "./graph_factory.h"
 /* Make sure include graph_factory.h BEFORE antlr4-runtime.h. Otherwise causing the following error:
  * ‘EOF’ was not declared in this scope.
@@ -60,12 +68,21 @@
 using namespace geax::frontend;
 using geax::frontend::GEAXErrorCode;
 
+namespace {
+
+// Concurrent unit-test processes share the cwd, so each gets its own DB dir.
+std::string IsolatedBoltDir(const std::string& dir) {
+    return dir + "_" + std::to_string(GetCurrentPid());
+}
+
+}  // namespace
+
 class TestSeriesBolt : public TuGraphTest {
  private:
     std::shared_ptr<cypher::RTContext> ctx_;
     std::shared_ptr<lgraph::Galaxy> galaxy_;
     lgraph::Galaxy::Config gconf_;
-    std::string db_dir_ = "./testdb_series_bolt";
+    std::string db_dir_ = IsolatedBoltDir("./testdb_series_bolt");
     std::string graph_name_ = "default";
 
  protected:
