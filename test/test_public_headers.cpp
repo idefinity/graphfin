@@ -41,7 +41,10 @@ TEST(TestPublicHeaders, ChangedHeadersCompileStandalone) {
     // disappearing again.
     auto bound = boost::phoenix::bind(&Twice, 21);
     EXPECT_EQ(bound(), 42);
-    (void)&boost::log::add_common_attributes;  // boost/log/common.hpp
+    // common.hpp pulls in sources/channel_logger.hpp (verified against Boost
+    // 1.68); setup helpers such as add_common_attributes are NOT in it.
+    boost::log::sources::channel_logger<> channel("public-header-check");
+    (void)channel;
     auto severity = lgraph_log::expr::attr<int>("Severity");
     (void)severity;
     lgraph_log::sinks::text_ostream_backend backend;
