@@ -106,7 +106,7 @@ template <typename VertexData>
 FieldData VertexFieldData(const VertexData &value) {
     static_assert(std::is_arithmetic<VertexData>::value ||
                       std::is_same<VertexData, std::string>::value,
-                  "WriteToGraphDB can only write back bool, numeric or string vertex data");
+                  "WriteToGraphDBTyped can only write back bool, numeric or string vertex data");
     return detail::ToFieldData(value, detail::FieldDataTag<VertexData>());
 }
 
@@ -1608,7 +1608,7 @@ class OlapOnDB : public OlapBase<EdgeData> {
     }
 
     /**
-     * @brief    Write vertex data to the graph database.
+     * @brief    Write vertex data to the graph database, preserving its type.
      *
      *          Values keep the type of the result vector: a ParallelVector<double>
      *          needs a DOUBLE field (or one the storage layer can convert to), a
@@ -1622,6 +1622,44 @@ class OlapOnDB : public OlapBase<EdgeData> {
      *          as of now, not as of the snapshot: vertices deleted in the meantime
      *          are skipped.
      *
+     *          Migration note: the original WriteToGraphDB stringifies its values
+     *          and has no snapshot precondition. Callers that need numeric results
+     *          (e.g. DOUBLE/INT64 fields) should switch to this distinctly named
+     *          API and close the snapshot transaction first.
+     *
+     * @param [in,out]   vertex_data    The parallel vector storing the vertex data.
+     * @param [in]       vertex_field   The name of the vertex field.
+     *
+     */
+    template <typename VertexData>
+    void WriteToGraphDBTyped(ParallelVector<VertexData> &vertex_data,
+                             const std::string &vertex_field) {
+        if (db_ == nullptr) {
+            throw std::runtime_error("can't write to graph because db is null");
+        }
+        if (txn_.IsValid()) {
+            throw std::runtime_error(
+                "can't write to graph while the snapshot transaction is open: commit or abort it "
+                "before calling WriteToGraphDBTyped");
+        }
+        auto write_txn = db_->CreateWriteTxn();
+        auto vit = write_txn.GetVertexIterator();
+        for (size_t i = 0; i < this->num_vertices_; i++) {
+            vit.Goto(OriginalVid(i));
+            if (vit.IsValid()) {
+                vit.SetField(vertex_field, VertexFieldData(vertex_data[i]));
+            }
+        }
+        write_txn.Commit();
+    }
+
+    /**
+     * @brief    Legacy stringifying write-back, kept source and behavior
+     *           compatible with pre-existing SDK/procedure callers. Every value
+     *           is converted with std::to_string and written as a STRING field.
+     *           To keep numeric results in numeric fields, use
+     *           WriteToGraphDBTyped instead (it requires a closed snapshot).
+     *
      * @param [in,out]   vertex_data    The parallel vector storing the vertex data.
      * @param [in]       vertex_field   The name of the vertex field.
      *
@@ -1631,17 +1669,13 @@ class OlapOnDB : public OlapBase<EdgeData> {
         if (db_ == nullptr) {
             throw std::runtime_error("can't write to graph because db is null");
         }
-        if (txn_.IsValid()) {
-            throw std::runtime_error(
-                "can't write to graph while the snapshot transaction is open: commit or abort it "
-                "before calling WriteToGraphDB");
-        }
         auto write_txn = db_->CreateWriteTxn();
         auto vit = write_txn.GetVertexIterator();
         for (size_t i = 0; i < this->num_vertices_; i++) {
+            FieldData local_distance(std::to_string(vertex_data[i]));
             vit.Goto(OriginalVid(i));
             if (vit.IsValid()) {
-                vit.SetField(vertex_field, VertexFieldData(vertex_data[i]));
+                vit.SetField(vertex_field, local_distance);
             }
         }
         write_txn.Commit();

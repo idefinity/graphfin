@@ -58,7 +58,8 @@ static const std::vector<std::pair<std::string, std::string>> data_import = {
             "primary" : "id",
             "properties" : [
                 {"name" : "id", "type":"INT32"},
-                {"name" : "value", "type" : "INT64", "optional": true}
+                {"name" : "value", "type" : "INT64", "optional": true},
+                {"name" : "legacy_value", "type" : "STRING", "optional": true}
             ]
         },
         {
@@ -391,18 +392,25 @@ TEST_F(TestOlapOnDB, OlapOnDB) {
         for (int i = 0; i < parent.Size(); i++) {
             parent[i] = i;
         }
-        // A thread may hold only one transaction, so write-back refuses to start while
-        // the snapshot is still open rather than failing inside the transaction layer.
-        UT_EXPECT_THROW_MSG(filter_graph.WriteToGraphDB(parent, "value"),
-                            "while the snapshot transaction is open");
-
         txn.Commit();
 
-        // WriteToGraphDB: with the snapshot committed, the size_t results land in the
-        // INT64 field as numbers, not as text.
-        filter_graph.WriteToGraphDB(parent, "value");
+        // Legacy WriteToGraphDB keeps its original stringifying behavior and
+        // writes into a STRING field; it adds no snapshot precondition of its own.
+        filter_graph.WriteToGraphDB(parent, "legacy_value");
         txn = db.CreateReadTxn();
         auto vit = txn.GetVertexIterator();
+        vit.Goto(2);
+        UT_EXPECT_EQ(vit.GetField("legacy_value").GetType(), FieldType::STRING);
+        UT_EXPECT_EQ(vit.GetField("legacy_value").AsString(), "2");
+
+        // The typed API needs a closed snapshot: a thread may hold only one
+        // transaction, and it keeps the size_t results numeric in an INT64 field.
+        UT_EXPECT_THROW_MSG(filter_graph.WriteToGraphDBTyped(parent, "value"),
+                            "while the snapshot transaction is open");
+        txn.Abort();
+        filter_graph.WriteToGraphDBTyped(parent, "value");
+        txn = db.CreateReadTxn();
+        vit = txn.GetVertexIterator();
         vit.Goto(2);
         UT_EXPECT_EQ(vit.GetField("value").GetType(), FieldType::INT64);
         UT_EXPECT_EQ(vit.GetField("value").AsInt64(), (int64_t)2);

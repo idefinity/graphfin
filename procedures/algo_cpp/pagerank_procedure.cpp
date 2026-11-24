@@ -112,7 +112,7 @@ extern "C" bool Process(GraphDB& db, const std::string& request, std::string& re
         // Write-back is a transaction of its own and a thread may hold only one, so the
         // read snapshot has to be closed before the scores go into the graph.
         txn.Commit();
-        olapondb.WriteToGraphDB<double>(pr, pr_value);
+        olapondb.WriteToGraphDBTyped<double>(pr, pr_value);
     }
     auto output_cost = get_time() - start_time;
 

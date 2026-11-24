@@ -98,7 +98,7 @@ extern "C" bool Process(GraphDB& db, const std::string& request, std::string& re
     txn.Commit();
 
     if (lpa_value != "") {
-        olapondb.WriteToGraphDB<size_t>(label, lpa_value);
+        olapondb.WriteToGraphDBTyped<size_t>(label, lpa_value);
     }
     auto output_cost = get_time() - start_time;
 
