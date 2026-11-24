@@ -52,6 +52,44 @@ static constexpr size_t SNAPSHOT_OUT_EDGES = 1ul << 5;
 static constexpr size_t SNAPSHOT_IN_EDGES = 1ul << 6;
 // Generate the in edges
 
+namespace detail {
+
+// Tag dispatch instead of `if constexpr` keeps this installed header usable by
+// downstream plugins that still compile with C++14.
+struct FieldDataDirect {};
+struct FieldDataDouble {};
+struct FieldDataBool {};
+struct FieldDataInt64 {};
+
+template <typename T>
+using FieldDataTag = typename std::conditional<
+    std::is_same<T, float>::value || std::is_same<T, double>::value, FieldDataDirect,
+    typename std::conditional<
+        std::is_floating_point<T>::value, FieldDataDouble,
+        typename std::conditional<
+            std::is_same<T, bool>::value, FieldDataBool,
+            typename std::conditional<std::is_integral<T>::value, FieldDataInt64,
+                                      FieldDataDirect>::type>::type>::type>::type;
+
+template <typename T>
+FieldData ToFieldData(const T &value, FieldDataDirect) {
+    return FieldData(value);
+}
+template <typename T>
+FieldData ToFieldData(const T &value, FieldDataDouble) {
+    return FieldData(static_cast<double>(value));
+}
+template <typename T>
+FieldData ToFieldData(const T &value, FieldDataBool) {
+    return FieldData(value);
+}
+template <typename T>
+FieldData ToFieldData(const T &value, FieldDataInt64) {
+    return FieldData(static_cast<int64_t>(value));
+}
+
+}  // namespace detail
+
 /**
  * @brief   Convert one OLAP vertex result into a FieldData of its own type.
  *
@@ -66,23 +104,10 @@ static constexpr size_t SNAPSHOT_IN_EDGES = 1ul << 6;
  */
 template <typename VertexData>
 FieldData VertexFieldData(const VertexData &value) {
-    static_assert(std::is_arithmetic_v<VertexData> || std::is_same_v<VertexData, std::string>,
+    static_assert(std::is_arithmetic<VertexData>::value ||
+                      std::is_same<VertexData, std::string>::value,
                   "WriteToGraphDB can only write back bool, numeric or string vertex data");
-    if constexpr (std::is_same_v<VertexData, float> || std::is_same_v<VertexData, double>) {
-        return FieldData(value);
-    } else if constexpr (std::is_floating_point_v<VertexData>) {
-        return FieldData(static_cast<double>(value));
-    } else if constexpr (std::is_integral_v<VertexData>) {
-        // bool is integral and has its own FieldData constructor, so it must not
-        // be widened to a count.
-        if constexpr (std::is_same_v<VertexData, bool>) {
-            return FieldData(value);
-        } else {
-            return FieldData(static_cast<int64_t>(value));
-        }
-    } else {
-        return FieldData(value);
-    }
+    return detail::ToFieldData(value, detail::FieldDataTag<VertexData>());
 }
 
 /**
