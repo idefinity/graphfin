@@ -746,9 +746,10 @@ TEST_F(TestSeriesTransaction, ByteCapFailureAfterBucketWriteAbortsWholeBatch) {
         Bucket b;
         b.first_ts = base;
         b.measure_ids = {0};
+        b.columns = {std::vector<MeasureValue>{}};
         for (size_t i = 0; i < values.size(); ++i) {
             b.timestamps.push_back(base + static_cast<int64_t>(i));
-            b.columns.push_back(std::vector<MeasureValue>{MeasureValue::Int64(values[i])});
+            b.columns[0].push_back(MeasureValue::Int64(values[i]));
         }
         return b;
     };
