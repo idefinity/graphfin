@@ -1104,3 +1104,28 @@ def test_append_batch_wire_and_atomicity(rest):
     _, rows = rest.cypher(
         "MATCH ()-[r:BLINK]->() RETURN series.count(r, 'w') AS n")
     assert rows == [[3]]
+
+
+def test_append_batch_byte_cap_error_is_atomic(rest):
+    # Cypher-level exercise of series.append_batch's !ok branch: a byte cap no
+    # point can fit makes UpsertBatch report false, and the procedure aborts
+    # the transaction before raising instead of leaving partial points.
+    rest.cypher("CALL db.createVertexLabel('ByteCap', 'id', 'id', 'INT64', false)")
+    rest.cypher("CALL db.createSeriesField('ByteCap', 'p', "
+                "[{name:'v', type:'INT64'}], "
+                "{bucket_max_points:2, bucket_max_bytes:1}) YIELD field RETURN field")
+    rest.cypher("CREATE (c:ByteCap {id:1})")
+    base = 1704153600000000
+    day = 86400000000
+    try:
+        rest.cypher(
+            "MATCH (c:ByteCap {id:1}) CALL series.append_batch(c, 'p', "
+            "[{ts: %d, v: 1}, {ts: %d, v: 2}, {ts: %d, v: 3}]) "
+            "YIELD written, replaced RETURN written, replaced"
+            % (base, base + day, base + 2 * day))
+        raise AssertionError("byte-cap batch unexpectedly succeeded")
+    except CypherError as e:
+        assert "bucket byte cap" in str(e), str(e)
+    _, rows = rest.cypher(
+        "MATCH (c:ByteCap {id:1}) RETURN series.count(c, 'p') AS n")
+    assert rows[0][0] == 0

@@ -1806,6 +1806,10 @@ void BuiltinProcedure::SeriesAppendBatch(RTContext *ctx, const Record *record,
         elem.is_edge ? txn->SetEdgeSeriesPoints(elem.euid, field, std::move(points), &stats)
                      : txn->SetVertexSeriesPoints(elem.vid, field, std::move(points), &stats);
     if (!ok) {
+        // UpsertBatch writes bucket by bucket: an earlier bucket of this batch
+        // may already be in the transaction. Abort it so none of the batch is
+        // visible after the error (Abort is idempotent on an invalid txn).
+        txn->Abort();
         THROW_CODE(InputError, "series.append_batch: a point does not fit the bucket byte cap");
     }
     Record r;
