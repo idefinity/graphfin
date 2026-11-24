@@ -772,15 +772,15 @@ TEST_F(TestSeriesTransaction, ByteCapFailureAfterBucketWriteAbortsWholeBatch) {
     auto txn = db.CreateWriteTxn();
     VertexId v = txn.AddVertex(std::string("Capped"), std::vector<std::string>{"id"},
                                std::vector<std::string>{"1"});
-    std::vector<Point> batch;
+    std::vector<series::Point> batch;
     for (int i = 0; i < 3; ++i) {
-        Point p;
+        series::Point p;
         p.ts = base + 10 + i;
         p.values = {MeasureValue::Int64(i)};
         batch.push_back(std::move(p));
     }
     for (int i = 0; i < 3; ++i) {
-        Point p;
+        series::Point p;
         p.ts = base + 20 + i;
         p.values = {MeasureValue::Int64(std::numeric_limits<int64_t>::max())};
         batch.push_back(std::move(p));
@@ -794,7 +794,7 @@ TEST_F(TestSeriesTransaction, ByteCapFailureAfterBucketWriteAbortsWholeBatch) {
     txn.Abort();
 
     auto rtxn = db.CreateReadTxn();
-    std::vector<Point> points;
+    std::vector<series::Point> points;
     ASSERT_TRUE(rtxn.GetVertexSeriesRange(v, "p", kMinTs, kMaxTs, &points));
     EXPECT_TRUE(points.empty());
     EXPECT_EQ(SeriesKeyCount(db, rtxn), 0u);
