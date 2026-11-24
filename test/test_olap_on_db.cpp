@@ -410,15 +410,15 @@ TEST_F(TestOlapOnDB, OlapOnDB) {
         txn.Abort();
         filter_graph.WriteToGraphDBTyped(parent, "value");
         txn = db.CreateReadTxn();
-        vit = txn.GetVertexIterator();
-        vit.Goto(2);
-        UT_EXPECT_EQ(vit.GetField("value").GetType(), FieldType::INT64);
-        UT_EXPECT_EQ(vit.GetField("value").AsInt64(), (int64_t)2);
-        UT_EXPECT_EQ(vit.GetField("value").ToString(), "2");
-        vit.Goto(20);
-        UT_EXPECT_EQ(vit.GetField("value").GetType(), FieldType::INT64);
-        UT_EXPECT_EQ(vit.GetField("value").AsInt64(), (int64_t)20);
-        UT_EXPECT_EQ(vit.GetField("value").ToString(), "20");
+        auto typed_vit = txn.GetVertexIterator();
+        typed_vit.Goto(2);
+        UT_EXPECT_EQ(typed_vit.GetField("value").GetType(), FieldType::INT64);
+        UT_EXPECT_EQ(typed_vit.GetField("value").AsInt64(), (int64_t)2);
+        UT_EXPECT_EQ(typed_vit.GetField("value").ToString(), "2");
+        typed_vit.Goto(20);
+        UT_EXPECT_EQ(typed_vit.GetField("value").GetType(), FieldType::INT64);
+        UT_EXPECT_EQ(typed_vit.GetField("value").AsInt64(), (int64_t)20);
+        UT_EXPECT_EQ(typed_vit.GetField("value").ToString(), "20");
 
         // WriteToFile
         std::string file_path = "./test_write_to_db.csv";
