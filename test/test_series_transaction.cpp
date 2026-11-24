@@ -736,16 +736,18 @@ FieldSpec CappedIntSeriesField(const std::string& name, uint32_t max_points, uin
 
 TEST_F(TestSeriesTransaction, ByteCapFailureAfterBucketWriteAbortsWholeBatch) {
     // Choose a cap that fits a two-point bucket of small values but not a
-    // one-point bucket of INT64_MAX. A batch of three small points followed by
-    // three huge ones therefore writes early buckets and only then fails.
+    // one-point bucket of INT64_MAX. Timestamps one microsecond apart keep the
+    // delta-of-delta column at two bytes; day-sized gaps would cost nine bytes
+    // and make the small bucket larger than the huge one.
+    const int64_t base = 1704153600000000LL;  // 2024-01-02, inside DATETIME range
     const std::vector<MeasureColumn> cols{MeasureColumn{MeasureType::INT64}};
     const BucketPolicy unbounded;
-    auto bucket_of = [](const std::vector<int64_t>& values) {
+    auto bucket_of = [base](const std::vector<int64_t>& values) {
         Bucket b;
-        b.first_ts = 0;
+        b.first_ts = base;
         b.measure_ids = {0};
         for (size_t i = 0; i < values.size(); ++i) {
-            b.timestamps.push_back(static_cast<int64_t>(i) * kUsPerDay);
+            b.timestamps.push_back(base + static_cast<int64_t>(i));
             b.columns.push_back(std::vector<MeasureValue>{MeasureValue::Int64(values[i])});
         }
         return b;
@@ -773,13 +775,13 @@ TEST_F(TestSeriesTransaction, ByteCapFailureAfterBucketWriteAbortsWholeBatch) {
     std::vector<Point> batch;
     for (int i = 0; i < 3; ++i) {
         Point p;
-        p.ts = (i + 10) * kUsPerDay;
+        p.ts = base + 10 + i;
         p.values = {MeasureValue::Int64(i)};
         batch.push_back(std::move(p));
     }
     for (int i = 0; i < 3; ++i) {
         Point p;
-        p.ts = (i + 20) * kUsPerDay;
+        p.ts = base + 20 + i;
         p.values = {MeasureValue::Int64(std::numeric_limits<int64_t>::max())};
         batch.push_back(std::move(p));
     }

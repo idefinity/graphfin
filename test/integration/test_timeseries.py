@@ -1107,22 +1107,29 @@ def test_append_batch_wire_and_atomicity(rest):
 
 
 def test_append_batch_byte_cap_error_is_atomic(rest):
-    # Cypher-level exercise of series.append_batch's !ok branch: a byte cap no
-    # point can fit makes UpsertBatch report false, and the procedure aborts
-    # the transaction before raising instead of leaving partial points.
+    # Cypher-level exercise of series.append_batch's !ok branch with a genuine
+    # mid-batch failure. For one INT64 measure and timestamps one microsecond
+    # apart, a two-point bucket of small values is 38 bytes (28-byte header +
+    # 2-byte timestamp column + 8-byte column block); a one-point bucket of
+    # INT64_MAX is 42 bytes because its value takes RAW64 instead of a 1-byte
+    # varint. The cap therefore lets early buckets be written and fails on a
+    # later point, which is what distinguishes an explicit procedure abort
+    # from any pre-existing transaction rollback.
     rest.cypher("CALL db.createVertexLabel('ByteCap', 'id', 'id', 'INT64', false)")
     rest.cypher("CALL db.createSeriesField('ByteCap', 'p', "
                 "[{name:'v', type:'INT64'}], "
-                "{bucket_max_points:2, bucket_max_bytes:1}) YIELD field RETURN field")
+                "{bucket_max_points:2, bucket_max_bytes:38}) YIELD field RETURN field")
     rest.cypher("CREATE (c:ByteCap {id:1})")
     base = 1704153600000000
-    day = 86400000000
+    huge = 9223372036854775807
     try:
         rest.cypher(
             "MATCH (c:ByteCap {id:1}) CALL series.append_batch(c, 'p', "
-            "[{ts: %d, v: 1}, {ts: %d, v: 2}, {ts: %d, v: 3}]) "
+            "[{ts: %d, v: 0}, {ts: %d, v: 1}, {ts: %d, v: 2}, "
+            "{ts: %d, v: %d}, {ts: %d, v: %d}, {ts: %d, v: %d}]) "
             "YIELD written, replaced RETURN written, replaced"
-            % (base, base + day, base + 2 * day))
+            % (base + 10, base + 11, base + 12,
+               base + 20, huge, base + 21, huge, base + 22, huge))
         raise AssertionError("byte-cap batch unexpectedly succeeded")
     except CypherError as e:
         assert "bucket byte cap" in str(e), str(e)
