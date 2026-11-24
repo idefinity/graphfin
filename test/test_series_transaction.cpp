@@ -15,10 +15,19 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <random>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#include <Windows.h>
+#define GetCurrentPid GetCurrentProcessId
+#else
+#include <unistd.h>
+#define GetCurrentPid getpid
+#endif
 
 #include "gtest/gtest.h"
 
@@ -37,6 +46,12 @@ using namespace lgraph::series;  // NOLINT
 namespace {
 
 const int64_t kUsPerDay = 86400LL * 1000000LL;
+
+// Concurrent unit-test processes share the cwd, so each gets its own LMDB
+// directory (the same isolation test_series_store.cpp uses).
+std::string IsolatedDir(const std::string& dir) {
+    return dir + "_" + std::to_string(GetCurrentPid());
+}
 
 FieldSpec SeriesField(const std::string& name) {
     FieldSpec f(name, FieldType::BLOB, true);
@@ -70,7 +85,7 @@ size_t SeriesKeyCount(LightningGraph& db, lgraph::Transaction& txn) {
 class TestSeriesTransaction : public TuGraphTest {};
 
 TEST_F(TestSeriesTransaction, PointsRoundTripAndCorrectThroughTheTransaction) {
-    const std::string dir = "./testdb_series_txn";
+    const std::string dir = IsolatedDir("./testdb_series_txn");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -121,7 +136,7 @@ TEST_F(TestSeriesTransaction, PointsRoundTripAndCorrectThroughTheTransaction) {
 }
 
 TEST_F(TestSeriesTransaction, SeriesSurvivesCommitAndReopen) {
-    const std::string dir = "./testdb_series_txn_reopen";
+    const std::string dir = IsolatedDir("./testdb_series_txn_reopen");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -152,7 +167,7 @@ TEST_F(TestSeriesTransaction, SeriesSurvivesCommitAndReopen) {
 }
 
 TEST_F(TestSeriesTransaction, DeletingAVertexDropsItsBuckets) {
-    const std::string dir = "./testdb_series_txn_delete";
+    const std::string dir = IsolatedDir("./testdb_series_txn_delete");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -183,7 +198,7 @@ TEST_F(TestSeriesTransaction, DeletingAVertexDropsItsBuckets) {
 }
 
 TEST_F(TestSeriesTransaction, ClearSeriesAndRefuseOrdinaryWrites) {
-    const std::string dir = "./testdb_series_txn_clear";
+    const std::string dir = IsolatedDir("./testdb_series_txn_clear");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -257,8 +272,9 @@ std::vector<MeasureValue> IntPoint(int64_t v) { return {MeasureValue::Int64(v)};
 
 TEST_F(TestSeriesTransaction, DeletingASeriesFieldLeavesSiblingSeriesIntact) {
     for (bool fast_alter : {false, true}) {
-        const std::string dir =
-            fast_alter ? "./testdb_series_txn_delfield_fast" : "./testdb_series_txn_delfield";
+        const std::string dir = fast_alter
+                                    ? IsolatedDir("./testdb_series_txn_delfield_fast")
+                                    : IsolatedDir("./testdb_series_txn_delfield");
         AutoCleanDir cleaner(dir);
         DBConfig conf;
         conf.dir = dir;
@@ -293,7 +309,7 @@ TEST_F(TestSeriesTransaction, DeletingASeriesFieldLeavesSiblingSeriesIntact) {
 }
 
 TEST_F(TestSeriesTransaction, DeletingAPrecedingFieldMigratesSurvivingSeries) {
-    const std::string dir = "./testdb_series_txn_delguard";
+    const std::string dir = IsolatedDir("./testdb_series_txn_delguard");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -326,7 +342,7 @@ TEST_F(TestSeriesTransaction, DeletingAPrecedingFieldMigratesSurvivingSeries) {
 }
 
 TEST_F(TestSeriesTransaction, RedefiningSeriesMeasuresIsRejected) {
-    const std::string dir = "./testdb_series_txn_modguard";
+    const std::string dir = IsolatedDir("./testdb_series_txn_modguard");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -357,7 +373,7 @@ TEST_F(TestSeriesTransaction, RedefiningSeriesMeasuresIsRejected) {
 }
 
 TEST_F(TestSeriesTransaction, DropAllVertexClearsSeries) {
-    const std::string dir = "./testdb_series_txn_dropall";
+    const std::string dir = IsolatedDir("./testdb_series_txn_dropall");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -377,7 +393,7 @@ TEST_F(TestSeriesTransaction, DropAllVertexClearsSeries) {
 }
 
 TEST_F(TestSeriesTransaction, DelLabelClearsSeries) {
-    const std::string dir = "./testdb_series_txn_dellabel";
+    const std::string dir = IsolatedDir("./testdb_series_txn_dellabel");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -398,7 +414,7 @@ TEST_F(TestSeriesTransaction, DelLabelClearsSeries) {
 }
 
 TEST_F(TestSeriesTransaction, DeletingAVertexCleansIncidentEdgeSeries) {
-    const std::string dir = "./testdb_series_txn_incedge";
+    const std::string dir = IsolatedDir("./testdb_series_txn_incedge");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -437,7 +453,7 @@ TEST_F(TestSeriesTransaction, DeletingAVertexCleansIncidentEdgeSeries) {
 }
 
 TEST_F(TestSeriesTransaction, NarrowLookupsDoNotScanUnrelatedHistory) {
-    const std::string dir = "./testdb_series_txn_scan";
+    const std::string dir = IsolatedDir("./testdb_series_txn_scan");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -505,7 +521,7 @@ void AddLinkLabel(LightningGraph& db) {
 }  // namespace
 
 TEST_F(TestSeriesTransaction, EdgeSeriesRoundTripCorrectAndClear) {
-    const std::string dir = "./testdb_series_txn_edge";
+    const std::string dir = IsolatedDir("./testdb_series_txn_edge");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -559,7 +575,7 @@ TEST_F(TestSeriesTransaction, EdgeSeriesRoundTripCorrectAndClear) {
 }
 
 TEST_F(TestSeriesTransaction, RepeatUpsertIsByteIdentical) {
-    const std::string dir = "./testdb_series_txn_idem";
+    const std::string dir = IsolatedDir("./testdb_series_txn_idem");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -605,7 +621,7 @@ series::Point BatchPoint(int64_t ts, double open, double close, int64_t volume) 
 }  // namespace
 
 TEST_F(TestSeriesTransaction, BatchSetterMatchesSequentialLayout) {
-    const std::string dir = "./testdb_series_txn_batch";
+    const std::string dir = IsolatedDir("./testdb_series_txn_batch");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -661,7 +677,7 @@ TEST_F(TestSeriesTransaction, BatchSetterMatchesSequentialLayout) {
 }
 
 TEST_F(TestSeriesTransaction, BatchSetterGuardsMirrorSinglePoint) {
-    const std::string dir = "./testdb_series_txn_batch_guards";
+    const std::string dir = IsolatedDir("./testdb_series_txn_batch_guards");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -705,8 +721,85 @@ TEST_F(TestSeriesTransaction, BatchSetterGuardsMirrorSinglePoint) {
                          WriteNotAllowed);
 }
 
+namespace {
+
+FieldSpec CappedIntSeriesField(const std::string& name, uint32_t max_points, uint32_t max_bytes) {
+    FieldSpec f(name, FieldType::BLOB, true);
+    f.series = true;
+    f.series_spec.measures = {SeriesMeasureSpec{"v", FieldType::INT64}};
+    f.series_spec.bucket_max_points = max_points;
+    f.series_spec.bucket_max_bytes = max_bytes;
+    return f;
+}
+
+}  // namespace
+
+TEST_F(TestSeriesTransaction, ByteCapFailureAfterBucketWriteAbortsWholeBatch) {
+    // Choose a cap that fits a two-point bucket of small values but not a
+    // one-point bucket of INT64_MAX. A batch of three small points followed by
+    // three huge ones therefore writes early buckets and only then fails.
+    const std::vector<MeasureColumn> cols{MeasureColumn{MeasureType::INT64}};
+    const BucketPolicy unbounded;
+    auto bucket_of = [](const std::vector<int64_t>& values) {
+        Bucket b;
+        b.first_ts = 0;
+        b.measure_ids = {0};
+        for (size_t i = 0; i < values.size(); ++i) {
+            b.timestamps.push_back(static_cast<int64_t>(i) * kUsPerDay);
+            b.columns.push_back(std::vector<MeasureValue>{MeasureValue::Int64(values[i])});
+        }
+        return b;
+    };
+    std::string small, huge;
+    ASSERT_TRUE(SeriesStore::EncodeBucket(bucket_of({0, 1}), cols, unbounded, &small));
+    ASSERT_TRUE(SeriesStore::EncodeBucket(
+        bucket_of({std::numeric_limits<int64_t>::max()}), cols, unbounded, &huge));
+    ASSERT_GT(huge.size(), small.size());
+    const uint32_t cap = static_cast<uint32_t>(small.size());
+
+    const std::string dir = IsolatedDir("./testdb_series_txn_byte_cap");
+    AutoCleanDir cleaner(dir);
+    DBConfig conf;
+    conf.dir = dir;
+    LightningGraph db(conf);
+    UT_ASSERT(db.AddLabel("Capped",
+                          std::vector<FieldSpec>{FieldSpec("id", FieldType::INT64, false),
+                                                 CappedIntSeriesField("p", 2, cap)},
+                          true, VertexOptions("id")));
+
+    auto txn = db.CreateWriteTxn();
+    VertexId v = txn.AddVertex(std::string("Capped"), std::vector<std::string>{"id"},
+                               std::vector<std::string>{"1"});
+    std::vector<Point> batch;
+    for (int i = 0; i < 3; ++i) {
+        Point p;
+        p.ts = (i + 10) * kUsPerDay;
+        p.values = {MeasureValue::Int64(i)};
+        batch.push_back(std::move(p));
+    }
+    for (int i = 0; i < 3; ++i) {
+        Point p;
+        p.ts = (i + 20) * kUsPerDay;
+        p.values = {MeasureValue::Int64(std::numeric_limits<int64_t>::max())};
+        batch.push_back(std::move(p));
+    }
+    EXPECT_FALSE(txn.SetVertexSeriesPoints(v, "p", batch, nullptr));
+    // The failure is genuinely mid-batch: earlier buckets are already pending.
+    EXPECT_GT(SeriesKeyCount(db, txn), 0u);
+
+    // This mirrors series.append_batch's !ok path: abort before throwing so
+    // none of the batch survives the error.
+    txn.Abort();
+
+    auto rtxn = db.CreateReadTxn();
+    std::vector<Point> points;
+    ASSERT_TRUE(rtxn.GetVertexSeriesRange(v, "p", kMinTs, kMaxTs, &points));
+    EXPECT_TRUE(points.empty());
+    EXPECT_EQ(SeriesKeyCount(db, rtxn), 0u);
+}
+
 TEST_F(TestSeriesTransaction, EdgeBatchSetterRoundTrip) {
-    const std::string dir = "./testdb_series_txn_edge_batch";
+    const std::string dir = IsolatedDir("./testdb_series_txn_edge_batch");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -759,7 +852,7 @@ TEST_F(TestSeriesTransaction, AddingFixedFieldThatWouldShiftSeriesIdsIsRejected)
     // fields before variable-width fields. Adding a fixed-width field behind a
     // series field (BLOB = variable-width) would orphan its buckets on the
     // next reopen, so the DDL is rejected before anything commits.
-    const std::string dir = "./testdb_series_txn_r1guard";
+    const std::string dir = IsolatedDir("./testdb_series_txn_r1guard");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -805,7 +898,7 @@ TEST_F(TestSeriesTransaction, AddingFixedFieldThatWouldShiftSeriesIdsIsRejected)
 TEST_F(TestSeriesTransaction, OrdinaryFieldCannotGainTheSeriesModifier) {
     // A populated ordinary field must not silently become a series: its stored
     // bytes would be hidden with no bucket migration.
-    const std::string dir = "./testdb_series_txn_noseriesflip";
+    const std::string dir = IsolatedDir("./testdb_series_txn_noseriesflip");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -825,7 +918,7 @@ TEST_F(TestSeriesTransaction, FastAlterAddSeriesFieldSurvivesReopen) {
     // R2: a series added to an existing fast-alter label must persist a schema
     // that reopens. The lazy-add path used to stamp a default value that the
     // reopen validator rejects.
-    const std::string dir = "./testdb_series_txn_r2fast";
+    const std::string dir = IsolatedDir("./testdb_series_txn_r2fast");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -863,7 +956,7 @@ TEST_F(TestSeriesTransaction, DatabaseWithoutSeriesGainsItOnUpgrade) {
     // fine, gains the series table on first open, accepts a lazily added
     // packed-layout series field, and keeps ordinary data plus points across
     // a further reopen.
-    const std::string dir = "./testdb_series_txn_upgrade";
+    const std::string dir = IsolatedDir("./testdb_series_txn_upgrade");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -915,7 +1008,7 @@ TEST_F(TestSeriesTransaction, OutOfDateTimeRangeTimestampsAreRejected) {
     // R6: stored timestamps must round-trip through DATETIME on read. The
     // unbounded kMinTs/kMaxTs sentinels stay valid as range bounds but are
     // never valid stored points.
-    const std::string dir = "./testdb_series_txn_tsbounds";
+    const std::string dir = IsolatedDir("./testdb_series_txn_tsbounds");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -948,7 +1041,7 @@ TEST_F(TestSeriesTransaction, NonFiniteDoublesAreRejectedAtWrite) {
     // R8: NaN/Infinity serialize as JSON null while staying non-null in the
     // engine, so writes refuse them at the transaction boundary (the Cypher
     // layer rejects them first). Actual nulls still write fine.
-    const std::string dir = "./testdb_series_txn_nonfinite";
+    const std::string dir = IsolatedDir("./testdb_series_txn_nonfinite");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -986,7 +1079,7 @@ TEST_F(TestSeriesTransaction, PreSeriesReleaseFixtureUpgradesCleanly) {
     // schema block). The current build must open it, read every record, gain
     // the series table on first open, accept lazily added series fields, and
     // keep everything across a further reopen.
-    const std::string dir = "./testdb_series_txn_preseries";
+    const std::string dir = IsolatedDir("./testdb_series_txn_preseries");
     AutoCleanDir cleaner(dir);
     const std::string fixture =
         lgraph::ut::TEST_RESOURCE_DIRECTORY + "/data/preseries_db/data.mdb";
@@ -1043,7 +1136,7 @@ TEST_F(TestSeriesTransaction, PreSeriesReleaseFixtureUpgradesCleanly) {
 TEST_F(TestSeriesTransaction, ConcurrentReadersShareTheStoreSafely) {
     // R3: the decode counter is shared across transactions on one graph.
     // Concurrent readers must not race on it (exercised under TSan).
-    const std::string dir = "./testdb_series_txn_concurrent";
+    const std::string dir = IsolatedDir("./testdb_series_txn_concurrent");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -1084,7 +1177,7 @@ TEST_F(TestSeriesTransaction, ConcurrentReadersAndWriterOverlap) {
     // TSan target: readers ranging/counting while a writer appends new points.
     // The shared decode counter and bucket reads must stay race-free, and the
     // writer's commits must never corrupt a concurrent read.
-    const std::string dir = "./testdb_series_txn_rw_overlap";
+    const std::string dir = IsolatedDir("./testdb_series_txn_rw_overlap");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -1163,7 +1256,7 @@ TEST_F(TestSeriesTransaction, EightConcurrentWritersOnDistinctSeries) {
     // S5: one single-writer series per thread, the expected production shape.
     // No thread touches another's buckets, so every commit must succeed first
     // try and every series must hold exactly its own points.
-    const std::string dir = "./testdb_series_txn_writers8";
+    const std::string dir = IsolatedDir("./testdb_series_txn_writers8");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -1218,7 +1311,7 @@ TEST_F(TestSeriesTransaction, SameSeriesContentionRetriesToFullCoverage) {
     // S5: several writers hammering one series conflict at LMDB level; each
     // retries its point until the commit lands. Disjoint timestamp blocks keep
     // the expected end state exact: every point present exactly once.
-    const std::string dir = "./testdb_series_txn_same_series";
+    const std::string dir = IsolatedDir("./testdb_series_txn_same_series");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -1288,7 +1381,7 @@ TEST_F(TestSeriesTransaction, RealisticOhlcvWorkload) {
     // written one transaction per symbol. Asserts exact point counts, spot
     // values, single-bucket packing per symbol, and logs the stored
     // bytes-per-point against the 32-byte raw width (8B ts + 3x8B measures).
-    const std::string dir = "./testdb_series_txn_ohlcv";
+    const std::string dir = IsolatedDir("./testdb_series_txn_ohlcv");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
@@ -1347,7 +1440,7 @@ TEST_F(TestSeriesTransaction, OpenReadSurvivesConcurrentCommit) {
     // Transaction/store lifetimes: a read txn with live results stays valid
     // across another txn's commit, keeps its snapshot (no leaking of the new
     // points), and a fresh txn observes the committed state.
-    const std::string dir = "./testdb_series_txn_snapshot";
+    const std::string dir = IsolatedDir("./testdb_series_txn_snapshot");
     AutoCleanDir cleaner(dir);
     DBConfig conf;
     conf.dir = dir;
