@@ -95,7 +95,7 @@ extern "C" bool Process(GraphDB& db, const std::string& request, std::string& re
     txn.Commit();
 
     if (lcc_value != "") {
-        olapondb.WriteToGraphDB<double>(score, lcc_value);
+        olapondb.WriteToGraphDBTyped<double>(score, lcc_value);
     }
     auto output_cost = get_time() - start_time;
 
