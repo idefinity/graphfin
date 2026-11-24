@@ -132,22 +132,19 @@ if (NOT LGRAPH_OPENBLAS_LIBRARY)
                           lib/x86_64-linux-gnu lib/aarch64-linux-gnu
                           lib64/x86_64-linux-gnu lib64/aarch64-linux-gnu
                           opt/homebrew/lib homebrew/lib usr/local/lib
-            DOC "OpenBLAS library used by the OLAP/plugin targets.")
+            DOC "OpenBLAS library linked by the core and OLAP/plugin targets.")
 endif ()
 if (LGRAPH_OPENBLAS_LIBRARY)
     message(STATUS "OpenBLAS library: ${LGRAPH_OPENBLAS_LIBRARY}")
-elseif (BUILD_PROCEDURE)
-    # BUILD_PROCEDURE is the option that enables the OLAP/plugin targets.
+else ()
+    # Core API/server targets link OpenBLAS unconditionally (BuildLGraphApi.cmake
+    # and BuildLGraphServer.cmake), so even BUILD_PROCEDURE=OFF cannot avoid it.
+    # Failing here gives a usable message instead of an unresolved link later.
     message(FATAL_ERROR
             "OpenBLAS not found. Set -DLGRAPH_OPENBLAS_ROOT=<prefix> or "
             "-DLGRAPH_OPENBLAS_LIBRARY=<path>, or install it under "
-            "deps/install/OpenBLAS. Use -DBUILD_PROCEDURE=OFF for a build "
-            "without the OLAP/plugin targets.")
-else ()
-    message(WARNING
-            "OpenBLAS not found; BUILD_PROCEDURE=OFF skips the OLAP/plugin "
-            "targets, but the core lgraph target still links OpenBLAS and "
-            "will need a library in order to link.")
+            "deps/install/OpenBLAS. Core lgraph/server targets link OpenBLAS "
+            "unconditionally, so -DBUILD_PROCEDURE=OFF does not avoid it.")
 endif ()
 
 # disable krb5
