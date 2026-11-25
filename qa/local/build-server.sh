@@ -6,6 +6,8 @@
 #   JOBS=4 qa/local/run.sh build      # faster, needs >=12 GiB container RAM
 #   CLEAN=0 qa/local/run.sh build     # incremental rebuild
 #   BUILD_TYPE=Release qa/local/run.sh build
+#   BUILD_TYPE=Release JOBS=1 qa/local/run.sh build  # low-memory mode; NOT
+#                                                   # comparable to baselines
 #
 # Output: build/output/  (lgraph_server, toolkits, liblgraph.so, unit_test,
 #                         fma_unit_test, ...)
@@ -29,6 +31,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/container.sh"
 # Worse, at -j4 the VM swaps heavily and total throughput drops: measured ~0.6
 # TUs/min versus 2 concurrent TUs at -j2 with no swapping. Use JOBS=2 unless you
 # have raised the container memory limit.
+# Opt-in low-memory lane: BUILD_TYPE=Release JOBS=1 qa/local/run.sh build.
+# Release drops debug info and JOBS=1 keeps one heavy TU in flight at a time,
+# but the result is NOT comparable to recorded RelWithDebInfo/-j2 baselines.
 JOBS="${JOBS:-2}"
 BUILD_TYPE="${BUILD_TYPE:-RelWithDebInfo}"
 BUILD_PROCEDURE="${BUILD_PROCEDURE:-OFF}"
@@ -45,10 +50,18 @@ if [[ "${JOBS}" -gt 2 ]]; then
     echo "qa:         memory limit before raising JOBS." >&2
 fi
 
+IMAGE_ID="$(docker image inspect "${QA_COMPILE_IMAGE}" --format '{{.Id}}' 2>/dev/null || echo unknown)"
+COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
+TREE_STATUS="$(git -C "${REPO_ROOT}" status --porcelain 2>/dev/null || true)"
+
 echo "qa: image      ${QA_COMPILE_IMAGE}"
-echo "qa: image_id   $(docker image inspect "${QA_COMPILE_IMAGE}" --format '{{.Id}}')"
+echo "qa: image_id   ${IMAGE_ID}"
+echo "qa: commit     ${COMMIT}"
+echo "qa: tree       ${TREE_STATUS:-clean}"
 echo "qa: build_type ${BUILD_TYPE}"
 echo "qa: jobs       ${JOBS}"
+echo "qa: build_proc ${BUILD_PROCEDURE}"
+echo "qa: memory     ${QA_DOCKER_EXTRA:-not set}"
 echo "qa: clean      ${CLEAN}"
 echo "qa: log        ${LOG}"
 
@@ -70,6 +83,18 @@ echo \"python:     \$(python3 --version)\"
 echo \"nproc:      \$(nproc)\"
 echo \"nofile:     \$(ulimit -n)\"
 echo \"map_count:  \$(cat /proc/sys/vm/max_map_count 2>/dev/null || echo n/a)\"
+
+echo '=== build inputs ==='
+echo \"commit:     \$(git rev-parse HEAD 2>/dev/null || echo unknown)\"
+tree=\$(git status --porcelain 2>/dev/null || true)
+echo \"tree:       \${tree:-clean}\"
+echo \"jobs:       '${JOBS}'\"
+echo \"build_type: '${BUILD_TYPE}'\"
+echo \"build_proc: '${BUILD_PROCEDURE}'\"
+echo \"image:      '${QA_COMPILE_IMAGE}'\"
+echo \"image_id:   '${IMAGE_ID}'\"
+echo \"mem_limit:  '${QA_DOCKER_EXTRA:-not set}'\"
+echo \"cgroup_mem: \$(cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo n/a)\"
 
 if [[ '${CLEAN_FLAG}' == '1' ]]; then
     echo '=== clean ==='
@@ -99,7 +124,13 @@ cmake .. \
     -DWITH_TESTS=ON \
     \$ARCH_OPT
 
-echo '=== make -j${JOBS} ==='
+# Two-phase build: cypher execution_plan TUs need 1.5-2.5 GiB RSS apiece, so
+# scheduling several of them at -j4 OOM-kills cc1plus. Serialize that target,
+# then build the remaining (cheap) targets with the full JOBS parallelism.
+echo '=== make -j1 lgraph_cypher_lib (heavy TUs serialized) ==='
+make -j1 lgraph_cypher_lib
+
+echo '=== make -j${JOBS} (remaining targets) ==='
 make -j'${JOBS}'
 
 echo '=== build artifacts ==='
