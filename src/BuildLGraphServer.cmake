@@ -53,6 +53,7 @@ add_library(${TARGET_SERVER_LIB} STATIC
         import/import_v2.cpp
         import/import_v3.cpp
         restful/server/rest_server.cpp
+        restful/server/rest_threadpool.cpp
         restful/server/stdafx.cpp
         http/http_server.cpp
         http/import_manager.cpp

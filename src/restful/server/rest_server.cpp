@@ -12,9 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  */
 
-#ifndef _WIN32
-#include <pplx/threadpool.h>
-#endif
 #include <set>
 
 #include "fma-common/file_system.h"
@@ -514,17 +511,6 @@ std::unique_ptr<IRestServer> CreateRestServer(StateMachine *state_machine,
     RestServer::Config rest_config(*config);
     return std::make_unique<RestServer>(state_machine, rest_config, config);
 }
-
-#ifndef _WIN32
-void InitRestThreadPool(int thread_limit) {
-    if (thread_limit == 0) return;
-    try {
-        crossplat::threadpool::initialize_with_threads(thread_limit);
-    } catch (const std::exception &e) {
-        LOG_WARN() << "failed to init cpprest threadpool, exception:" << e.what();
-    }
-}
-#endif
 
 static void ListDirFiles(const std::string& directory, std::vector<std::string>& files) {
     auto& fs = fma_common::FileSystem::GetFileSystem(directory);
