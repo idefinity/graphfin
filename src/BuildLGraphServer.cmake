@@ -47,6 +47,7 @@ add_library(${TARGET_SERVER_LIB} STATIC
         server/bolt_raft_server.cpp
         server/lgraph_server.cpp
         server/state_machine.cpp
+        server/cypher_query_bridge.cpp
         server/ha_state_machine.cpp
         server/db_management_client.cpp
         import/import_online.cpp

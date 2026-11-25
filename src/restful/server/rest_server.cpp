@@ -27,15 +27,10 @@
 #include "core/task_tracker.h"
 #include "core/version_info.h"
 #include "protobuf/ha.pb.h"
+#include "server/cypher_query_bridge.h"
 #include "server/proto_convert.h"
 #include "server/state_machine.h"
 #include "tools/lgraph_log.h"
-
-#ifndef _WIN32
-#include "cypher/execution_plan/scheduler.h"
-#include "execution_plan/runtime_context.h"
-#include "cypher/resultset/record.h"
-#endif
 
 // qw
 #include "fma-common/hardware_info.h"
@@ -1720,11 +1715,10 @@ void RestServer::HandlePostGraphQuery(const std::string& user, const std::string
 
     LGraphRequest proto_req;
     proto_req.set_token(token);
-    cypher::RTContext ctx(state_machine_, galaxy_, user, graph, state_machine_->IsCypherV2());
     std::string name;
     std::string type;
-    bool ret = cypher::Scheduler::DetermineReadOnly(&ctx, query_type, query,
-                                                    name, type);
+    bool ret = DetermineReadOnlyViaCypher(state_machine_, galaxy_, user, graph,
+                                          query_type, query, name, type);
     if (name.empty() || type.empty()) {
         proto_req.set_is_write_op(!ret);
     } else {
