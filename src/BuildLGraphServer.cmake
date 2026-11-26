@@ -21,11 +21,11 @@ if ((NOT LEVELDB_INCLUDE_PATH) OR (NOT LEVELDB_LIB))
     message(FATAL_ERROR "Fail to find leveldb")
 endif ()
 
-# protbuf
+# protbuf: ha.proto is shared and generated in BuildProtobuf.cmake; this
+# database-management proto is server-only.
 include(cmake/GenerateProtobuf.cmake)
 GenerateProtobufCpp(${CMAKE_CURRENT_LIST_DIR}/protobuf
-        PROTO_SRCS PROTO_HEADERS
-        ${CMAKE_CURRENT_LIST_DIR}/protobuf/ha.proto
+        PROTO_DBM_SRCS PROTO_DBM_HEADERS
         ${CMAKE_CURRENT_LIST_DIR}/protobuf/tugraph_db_management.proto)
 
 include_directories(${DEPS_INCLUDE_DIR})
@@ -61,7 +61,10 @@ add_library(${TARGET_SERVER_LIB} STATIC
         http/import_task.cpp
         http/algo_task.cpp
         monitor/prometheus_monitor.cpp
-        ${PROTO_SRCS})
+        ${PROTO_DBM_SRCS})
+
+# Reuse the single shared ha.pb.cc object instead of regenerating it here.
+target_link_libraries(${TARGET_SERVER_LIB} PRIVATE lgraph_proto_ha)
 
 # Internal-only static library: skip the Boost.Log umbrella headers pulled in
 # by tools/lgraph_log.h. PRIVATE keeps this out of lgraph_server, unit_test and

@@ -21,12 +21,6 @@ GenerateVersionInfo(${LGRAPH_VERSION_MAJOR} ${LGRAPH_VERSION_MINOR} ${LGRAPH_VER
         ${CMAKE_CURRENT_LIST_DIR}/core/version.h.in
         ${CMAKE_CURRENT_LIST_DIR}/core/version.h)
 
-# protbuf
-include(cmake/GenerateProtobuf.cmake)
-GenerateProtobufCpp(${CMAKE_CURRENT_LIST_DIR}/protobuf
-        PROTO_SRCS PROTO_HEADERS
-        ${CMAKE_CURRENT_LIST_DIR}/protobuf/ha.proto)
-
 set(LGRAPH_CORE_SRC
         core/audit_logger.cpp
         core/data_type.cpp
@@ -99,8 +93,10 @@ add_library(${TARGET_LGRAPH} SHARED
         plugin/python_plugin.cpp
         tiny-process-library/process.cpp
         tiny-process-library/process_unix.cpp
-        ${PROTO_SRCS}
         ${JNISRC})
+
+# Reuse the single shared ha.pb.cc object instead of regenerating it here.
+target_link_libraries(${TARGET_LGRAPH} PRIVATE lgraph_proto_ha)
 
 target_include_directories(${TARGET_LGRAPH} PUBLIC
         ${DEPS_LOCAL_INCLUDE_DIR}

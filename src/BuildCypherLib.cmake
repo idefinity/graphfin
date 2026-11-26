@@ -84,7 +84,7 @@ set(LGRAPH_CYPHER_SRC   # find cypher/ -name "*.cpp" | sort
 
 add_library(${TARGET_LGRAPH_CYPHER_LIB} STATIC
         ${LGRAPH_CYPHER_SRC}
-        ${PROTO_HEADERS})
+        ${PROTO_HA_HEADERS})
 
 # Internal-only static library: use the lean Boost.Log include path. PRIVATE
 # keeps the macro away from lgraph and any downstream consumer.

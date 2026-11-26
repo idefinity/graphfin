@@ -3,6 +3,7 @@ project(GraphFinSrc C CXX)
 
 set(LGRAPH_SRC_DIR ${PROJECT_SOURCE_DIR})
 
+include(BuildProtobuf.cmake)
 include(BuildLGraphApi.cmake)
 if(BUILD_JAVASDK)
     include(BuildLGraphApiForJNI.cmake)
