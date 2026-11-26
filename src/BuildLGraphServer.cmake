@@ -63,6 +63,11 @@ add_library(${TARGET_SERVER_LIB} STATIC
         monitor/prometheus_monitor.cpp
         ${PROTO_SRCS})
 
+# Internal-only static library: skip the Boost.Log umbrella headers pulled in
+# by tools/lgraph_log.h. PRIVATE keeps this out of lgraph_server, unit_test and
+# anything that links this library.
+target_compile_definitions(${TARGET_SERVER_LIB} PRIVATE LGRAPH_LOG_LEAN)
+
 if (OURSYSTEM STREQUAL "centos9")
         target_compile_options(${TARGET_SERVER_LIB} PUBLIC
         -DGFLAGS_NS=${GFLAGS_NS}

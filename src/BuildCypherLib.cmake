@@ -86,6 +86,10 @@ add_library(${TARGET_LGRAPH_CYPHER_LIB} STATIC
         ${LGRAPH_CYPHER_SRC}
         ${PROTO_HEADERS})
 
+# Internal-only static library: use the lean Boost.Log include path. PRIVATE
+# keeps the macro away from lgraph and any downstream consumer.
+target_compile_definitions(${TARGET_LGRAPH_CYPHER_LIB} PRIVATE LGRAPH_LOG_LEAN)
+
 set_target_properties(${TARGET_LGRAPH_CYPHER_LIB} PROPERTIES LINKER_LANGUAGE CXX)
 
 target_include_directories(${TARGET_LGRAPH_CYPHER_LIB} PUBLIC

@@ -19,15 +19,18 @@
 #include <iostream>
 #include <boost/date_time/posix_time/posix_time.hpp>
 // Downstream projects historically relied on these umbrella headers being
-// transitively available from lgraph_log.h. They cost roughly 170 MB of extra
-// AST per translation unit (every sink, attribute factory and expression
-// formatter), but restoring them keeps the installed-header surface source
-// compatible; the narrower headers below still cover this file's direct uses.
+// transitively available from lgraph_log.h, so they stay enabled by default to
+// preserve the installed-header surface. They cost roughly 170 MB of extra AST
+// per translation unit (every sink, attribute factory and expression
+// formatter), so internal targets may opt out with LGRAPH_LOG_LEAN. The narrow
+// includes below are unconditional and cover this file's direct Boost.Log uses.
+#ifndef LGRAPH_LOG_LEAN
 #include <boost/log/common.hpp>
 #include <boost/log/expressions.hpp>
 #include <boost/log/attributes.hpp>
 #include <boost/log/sinks.hpp>
 #include <boost/phoenix/bind/bind_function.hpp>
+#endif  // !LGRAPH_LOG_LEAN
 #include <boost/log/core.hpp>
 #include <boost/log/attributes/clock.hpp>
 #include <boost/log/attributes/constant.hpp>
