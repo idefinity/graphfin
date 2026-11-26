@@ -4,6 +4,7 @@
 # Usage:
 #   .build-tools/header-counts.sh
 #   LGRAPH_BUILD_LOGS=/path/to/logs .build-tools/header-counts.sh
+#   LGRAPH_REPO_ROOT=/workspace /results/header-counts.sh
 #
 # Runs `c++ -H -fsyntax-only` on three representative translation units and
 # writes the number of headers each one pulls in to
@@ -12,12 +13,20 @@
 # build instead of a guessed include path list. Syntax errors are ignored: -H
 # still reports the headers it managed to open before the error.
 set -uo pipefail
-R=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# The gate may copy this script next to its results, so BASH_SOURCE is not
+# necessarily inside the repo. Allow an explicit root; keep the in-repo default.
+R=${LGRAPH_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 B=${BUILD_DIR:-$R/build}
 L=${LGRAPH_BUILD_LOGS:-$R/.build-logs}
 CXX=${CXX:-c++}
 FLAGS_MAKE=${FLAGS_MAKE:-$B/src/CMakeFiles/lgraph_cypher_lib.dir/flags.make}
 SERVER_FLAGS_MAKE=${SERVER_FLAGS_MAKE:-$B/src/CMakeFiles/lgraph_server_lib.dir/flags.make}
+if [ ! -f "$R/CMakeCache.txt" ] && [ ! -f "$FLAGS_MAKE" ] \
+   && [ ! -f "$SERVER_FLAGS_MAKE" ]; then
+    echo "header-counts: repo root '$R' has no CMakeCache.txt and no flags.make." >&2
+    echo "header-counts: expected flags.make at '$FLAGS_MAKE' (server: '$SERVER_FLAGS_MAKE')." >&2
+    echo "header-counts: set LGRAPH_REPO_ROOT, BUILD_DIR or FLAGS_MAKE to a configured build." >&2
+fi
 WORKDIR=$B
 [ -d "$WORKDIR" ] || WORKDIR=$R
 mkdir -p "$L"
