@@ -89,8 +89,10 @@ for entry in \
     else
         : > "$TMP"
     fi
-    total=$(grep -c '^\.+[[:space:]]' "$TMP" || true)
-    unique=$(sed -n 's/^\.+[[:space:]]*//p' "$TMP" | LC_ALL=C sort -u | wc -l | tr -d ' ')
+    # GNU grep 2.20 BRE treats \+ as a literal plus; use ERE for dot-prefixed
+    # -H lines. Same for sed, so both total and unique counts are portable.
+    total=$(grep -Ec '^\.+[[:space:]]' "$TMP" || true)
+    unique=$(sed -En 's/^\.+[[:space:]]*//p' "$TMP" | LC_ALL=C sort -u | wc -l | tr -d ' ')
     if [ "$total" -eq 0 ]; then
         echo "header-counts: no -H header lines for $src" >&2
     fi
