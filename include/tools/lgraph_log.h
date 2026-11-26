@@ -37,6 +37,7 @@
 #include <boost/log/attributes/current_thread_id.hpp>
 #include <boost/log/attributes/value_extraction.hpp>
 #include <boost/log/expressions/attr.hpp>
+#include <boost/log/expressions/message.hpp>
 #include <boost/log/expressions/keyword.hpp>
 #include <boost/log/expressions/formatters/stream.hpp>
 #include <boost/log/expressions/formatters/date_time.hpp>
