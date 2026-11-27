@@ -12,9 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  */
 
-#ifndef _WIN32
-#include <pplx/threadpool.h>
-#endif
 #include <set>
 
 #include "fma-common/file_system.h"
@@ -30,15 +27,10 @@
 #include "core/task_tracker.h"
 #include "core/version_info.h"
 #include "protobuf/ha.pb.h"
+#include "server/cypher_query_bridge.h"
 #include "server/proto_convert.h"
 #include "server/state_machine.h"
 #include "tools/lgraph_log.h"
-
-#ifndef _WIN32
-#include "cypher/execution_plan/scheduler.h"
-#include "execution_plan/runtime_context.h"
-#include "cypher/resultset/record.h"
-#endif
 
 // qw
 #include "fma-common/hardware_info.h"
@@ -514,17 +506,6 @@ std::unique_ptr<IRestServer> CreateRestServer(StateMachine *state_machine,
     RestServer::Config rest_config(*config);
     return std::make_unique<RestServer>(state_machine, rest_config, config);
 }
-
-#ifndef _WIN32
-void InitRestThreadPool(int thread_limit) {
-    if (thread_limit == 0) return;
-    try {
-        crossplat::threadpool::initialize_with_threads(thread_limit);
-    } catch (const std::exception &e) {
-        LOG_WARN() << "failed to init cpprest threadpool, exception:" << e.what();
-    }
-}
-#endif
 
 static void ListDirFiles(const std::string& directory, std::vector<std::string>& files) {
     auto& fs = fma_common::FileSystem::GetFileSystem(directory);
@@ -1734,11 +1715,10 @@ void RestServer::HandlePostGraphQuery(const std::string& user, const std::string
 
     LGraphRequest proto_req;
     proto_req.set_token(token);
-    cypher::RTContext ctx(state_machine_, galaxy_, user, graph, state_machine_->IsCypherV2());
     std::string name;
     std::string type;
-    bool ret = cypher::Scheduler::DetermineReadOnly(&ctx, query_type, query,
-                                                    name, type);
+    bool ret = DetermineReadOnlyViaCypher(state_machine_, galaxy_, user, graph,
+                                          query_type, query, name, type);
     if (name.empty() || type.empty()) {
         proto_req.set_is_write_op(!ret);
     } else {

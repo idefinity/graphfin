@@ -131,6 +131,7 @@ add_executable(unit_test
         test_olap_vertex_traversal.cpp
         test_lgraph_log.cpp
         test_public_headers.cpp
+        test_public_headers_lean.cpp
         test_detach_property.cpp
         test_ha_base.cpp
         test_global_ha_config.cpp

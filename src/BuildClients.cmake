@@ -6,12 +6,6 @@ if (ENABLE_FULLTEXT_INDEX)
     find_package(JNI REQUIRED)
 endif ()
 
-# protbuf
-include(cmake/GenerateProtobuf.cmake)
-GenerateProtobufCpp(${CMAKE_CURRENT_LIST_DIR}/protobuf
-        PROTO_SRCS PROTO_HEADERS
-        ${CMAKE_CURRENT_LIST_DIR}/protobuf/ha.proto)
-
 # leveldb
 find_path(LEVELDB_INCLUDE_PATH NAMES leveldb/db.h)
 find_library(LEVELDB_LIB NAMES leveldb)
@@ -30,8 +24,10 @@ set(TARGET_CLIENT_CPP_RPC lgraph_client_cpp_rpc)
 
 add_library(${TARGET_CLIENT_CPP_RPC} SHARED
         client/cpp/rpc/lgraph_rpc_client.cpp
-        lgraph_api/lgraph_exceptions.cpp
-        ${PROTO_SRCS})
+        lgraph_api/lgraph_exceptions.cpp)
+
+# Reuse the single shared ha.pb.cc object instead of regenerating it here.
+target_link_libraries(${TARGET_CLIENT_CPP_RPC} PRIVATE lgraph_proto_ha)
 
 target_include_directories(${TARGET_CLIENT_CPP_RPC} PRIVATE
         ${DEPS_INCLUDE_DIR}
@@ -99,8 +95,9 @@ endif ()
 set(TARGET_CPP_CLIENT_REST lgraph_client_cpp_rest)
 
 add_library(${TARGET_CPP_CLIENT_REST} SHARED
-        client/cpp/restful/rest_client.cpp
-        ${PROTO_SRCS})
+        client/cpp/restful/rest_client.cpp)
+
+target_link_libraries(${TARGET_CPP_CLIENT_REST} PRIVATE lgraph_proto_ha)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_link_libraries(${TARGET_CPP_CLIENT_REST} PUBLIC
